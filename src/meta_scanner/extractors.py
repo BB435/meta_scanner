@@ -173,18 +173,22 @@ def _extract_docx(path: Path, settings: Settings, blocks: list[TextBlock]) -> No
     from docx import Document
     from docx.table import Table
 
-    document = Document(str(path.absolute()))
-    for index, item in enumerate(document.iter_inner_content(), 1):
-        if isinstance(item, Table):
-            for row_index, row in enumerate(item.rows, 1):
+    def append_tables(tables, locator_prefix: str) -> None:
+        for table in tables:
+            for row_index, row in enumerate(table.rows, 1):
                 values = [cell.text.strip() for cell in row.cells]
                 _append(
                     blocks,
-                    f"table:{index}/row:{row_index}",
+                    f"{locator_prefix}/row:{row_index}",
                     " | ".join(values),
                     "native",
                     settings,
                 )
+
+    document = Document(str(path.absolute()))
+    for index, item in enumerate(document.iter_inner_content(), 1):
+        if isinstance(item, Table):
+            append_tables([item], f"table:{index}")
         else:
             _append(blocks, f"paragraph:{index}", item.text, "native", settings)
     for section_index, section in enumerate(document.sections, 1):
@@ -197,6 +201,10 @@ def _extract_docx(path: Path, settings: Settings, blocks: list[TextBlock]) -> No
                     paragraph.text,
                     "native",
                     settings,
+                )
+            for table_index, table in enumerate(story.tables, 1):
+                append_tables(
+                    [table], f"section:{section_index}/{kind}/table:{table_index}"
                 )
 
 
