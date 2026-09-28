@@ -1,0 +1,35 @@
+{
+  "schema_version": 1,
+  "document_id": "sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+  "representative_path": "D:\\Documents\\2026年度設備点検計画.pdf",
+  "paths": [
+    {
+      "path": "D:\\Documents\\2026年度設備点検計画.pdf",
+      "size_bytes": 31457280,
+      "last_verified_at": "2026-09-28T13:15:00Z"
+    },
+    {
+      "path": "D:\\Documents\\共有用\\設備点検計画.pdf",
+      "size_bytes": 31457280,
+      "last_verified_at": "2026-09-28T13:16:00Z"
+    }
+  ],
+  "status": "complete",
+  "title": "2026年度設備点検計画",
+  "title_source": "document",
+  "summary": "2026年度の設備点検について、対象設備、実施時期、担当部署を整理した計画書。月次点検と年次点検の項目を示し、点検記録の作成と不具合発見時の報告手順を定める。",
+  "keywords": ["設備点検", "月次点検", "年次点検", "点検記録", "不具合報告"],
+  "language": "ja",
+  "extraction_methods": ["native", "ocr"],
+  "generation_method": "local_llm",
+  "evidence": [
+    {"field": "title", "locator": "page:1", "quote": "2026年度設備点検計画"},
+    {"field": "summary", "locator": "page:2", "quote": "対象設備、実施時期、担当部署を定める。月次点検と年次点検を実施し、点検記録を作成する。不具合報告は所定の手順による。"},
+    {"field": "keywords", "locator": "page:2", "quote": "設備点検、月次点検、年次点検、点検記録、不具合報告"}
+  ],
+  "warnings": [],
+  "extraction_version": "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
+  "metadata_version": "cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc",
+  "model_sha256": "dddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddd",
+  "generated_at": "2026-09-28T13:20:00Z"
+}

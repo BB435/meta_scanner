@@ -1,0 +1,92 @@
+# 直接抽出、OCR、ローカルAIの設定例。旧Officeなど将来用の項目も含みます。
+# このファイルをconfig.local.tomlへコピーし、パスを変更してください。
+# 相対パスは設定ファイルのあるディレクトリを基準に解決します。
+config_version = 1
+
+[scan]
+roots = ['C:\Document']
+extensions = ['.pptx', '.docx', '.xlsx', '.pdf']
+optional_extensions = [] # 現在指定可能: '.txt', '.md'。旧Office形式は未実装
+exclude_globs = ['**/~$*', '**/Thumbs.db', '**/.git/**', '**/.venv/**']
+follow_links = false
+hash_mode = 'strict' # 全量ハッシュのみを初期実装の対象にする
+stable_age_seconds = 60
+
+[storage]
+database = 'var/catalog.sqlite3'
+cache_dir = 'var/cache'
+temp_dir = 'var/tmp'
+export_dir = 'var/export'
+log_dir = 'var/log'
+min_free_disk_gib = 10
+temp_budget_gib = 20
+log_retention_days = 30
+export_retention_days = 30
+orphan_cache_retention_days = 30
+
+[runtime]
+window_start = '22:00'
+window_end = '06:00' # 翌日。時刻はWindowsのローカル時刻
+shutdown_grace_seconds = 300
+workers = 1
+cpu_threads = 4 # 実CPUに合わせ、論理CPU数以下にする
+process_group_memory_limit_gib = 8
+scan_budget_ratio = 0.25
+max_transient_attempts = 3
+
+[extraction]
+include_notes = true
+include_hidden_sheets = true
+protection_policy = 'skip_any_detected'
+file_timeout_seconds = 1800 # 将来用。現在はOCRページ単位の再開に未対応
+max_file_mib = 512
+max_uncompressed_mib = 2048
+max_pages_per_document = 5000
+max_nonempty_cells = 2000000
+max_text_characters = 20000000
+allow_cp932 = false
+
+[ocr]
+enabled = true
+executable = 'C:\Program Files\Tesseract-OCR\tesseract.exe'
+tessdata_dir = 'C:\Program Files\Tesseract-OCR\tessdata'
+languages = ['jpn', 'eng']
+vertical_language = 'jpn_vert'
+dpi = 300
+max_page_megapixels = 25 # 超えるページはタイル分割
+page_timeout_seconds = 180
+
+[llm]
+enabled = true
+backend = 'llama_cpp'
+executable = 'C:\Tools\llama.cpp\llama-server.exe'
+model_path = 'C:\Tools\llama.cpp\models\Qwen3.5-4B-Q4_K_M.gguf'
+model_sha256 = 'dd2e3279ffb2a8360853129c408ee091e078482b67f78df6f87be9d57c1bf03a' # 使用するGGUFのSHA-256
+endpoint = 'http://127.0.0.1:8080'
+gpu_layers = 0
+context_tokens = 4096
+chunk_tokens = 1800
+overlap_tokens = 150 # 分割時の重複幅。現在は日本語の保守的な文字数へ換算
+max_output_tokens = 768
+request_timeout_seconds = 600
+thinking = false
+temperature = 0.7 # 初期候補。P0の品質評価後に固定
+top_p = 0.8
+top_k = 20
+min_p = 0.0
+presence_penalty = 1.5
+
+[metadata]
+title_max_characters = 80
+summary_target_characters = [200, 400]
+summary_max_characters = 600
+keyword_target_count = [5, 10]
+keyword_max_count = 15
+repair_attempts = 1
+prompt_version = 'ja-catalog-v1'
+normalization_version = 'ja-text-v1'
+
+[legacy]
+enabled = false # ppt/doc/xlsのいずれかを有効にする場合はtrue
+libreoffice_executable = 'C:\Program Files\LibreOffice\program\soffice.com'
+conversion_timeout_seconds = 180

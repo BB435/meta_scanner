@@ -1,0 +1,18 @@
+# Python-generated files
+__pycache__/
+*.py[oc]
+build/
+dist/
+wheels/
+*.egg-info
+
+# Virtual environments
+.venv
+
+# Local documents, extracted content, models, and operational state
+config.local.toml
+var/
+models/
+.tools/
+tests/fixtures/private/
+tests/test_files

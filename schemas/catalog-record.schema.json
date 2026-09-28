@@ -1,0 +1,83 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "Meta Scanner Catalog Record v1",
+  "description": "1 JSONL line per unique active file content. Counts, roots, and scan completeness belong to run.json.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "schema_version", "document_id", "representative_path", "paths",
+    "status", "title", "title_source", "summary", "keywords", "language",
+    "extraction_methods", "generation_method", "evidence", "warnings",
+    "extraction_version", "metadata_version", "model_sha256", "generated_at"
+  ],
+  "properties": {
+    "schema_version": {"const": 1},
+    "document_id": {"type": "string", "pattern": "^sha256:[a-f0-9]{64}$"},
+    "representative_path": {"type": "string", "minLength": 1},
+    "paths": {
+      "type": "array", "minItems": 1, "uniqueItems": true,
+      "items": {
+        "type": "object", "additionalProperties": false,
+        "required": ["path", "size_bytes", "last_verified_at"],
+        "properties": {
+          "path": {"type": "string", "minLength": 1},
+          "size_bytes": {"type": "integer", "minimum": 0},
+          "last_verified_at": {"type": "string", "format": "date-time"}
+        }
+      }
+    },
+    "status": {"enum": ["complete", "review_required"]},
+    "title": {"type": "string", "minLength": 1, "maxLength": 80},
+    "title_source": {"enum": ["document", "embedded", "generated", "filename"]},
+    "summary": {"type": ["string", "null"], "minLength": 1, "maxLength": 600},
+    "keywords": {
+      "type": "array", "maxItems": 15, "uniqueItems": true,
+      "items": {"type": "string", "minLength": 1, "maxLength": 80}
+    },
+    "language": {"enum": ["ja", "en", "mixed", "und"]},
+    "extraction_methods": {
+      "type": "array", "minItems": 1, "uniqueItems": true,
+      "items": {"enum": ["native", "ocr", "converted"]}
+    },
+    "generation_method": {"enum": ["local_llm", "extractive_fallback"]},
+    "evidence": {
+      "type": "array",
+      "items": {
+        "type": "object", "additionalProperties": false,
+        "required": ["field", "locator", "quote"],
+        "properties": {
+          "field": {"enum": ["title", "summary", "keywords"]},
+          "locator": {"type": "string", "minLength": 1},
+          "quote": {"type": "string", "minLength": 1, "maxLength": 300}
+        }
+      }
+    },
+    "warnings": {
+      "type": "array", "uniqueItems": true,
+      "items": {"type": "string", "minLength": 1}
+    },
+    "extraction_version": {"type": "string", "pattern": "^[a-f0-9]{64}$"},
+    "metadata_version": {"type": "string", "pattern": "^[a-f0-9]{64}$"},
+    "model_sha256": {"type": ["string", "null"], "pattern": "^[a-f0-9]{64}$"},
+    "generated_at": {"type": "string", "format": "date-time"}
+  },
+  "allOf": [
+    {
+      "if": {"properties": {"status": {"const": "complete"}}},
+      "then": {
+        "properties": {
+          "summary": {"type": "string", "minLength": 1},
+          "keywords": {"minItems": 1},
+          "evidence": {"minItems": 1},
+          "title_source": {"enum": ["document", "embedded", "generated"]},
+          "generation_method": {"const": "local_llm"}
+        }
+      },
+      "else": {"properties": {"warnings": {"minItems": 1}}}
+    },
+    {
+      "if": {"properties": {"generation_method": {"const": "local_llm"}}},
+      "then": {"properties": {"model_sha256": {"type": "string"}}}
+    }
+  ]
+}
