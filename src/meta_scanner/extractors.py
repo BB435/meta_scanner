@@ -5,9 +5,9 @@ from __future__ import annotations
 import re
 import sqlite3
 import zipfile
+from collections.abc import Callable
 from dataclasses import asdict, dataclass
 from pathlib import Path
-from typing import Callable
 from xml.etree import ElementTree
 
 from .config import Settings
@@ -58,7 +58,13 @@ def _text(value: object) -> str:
     return re.sub(r"[\t \u3000]+", " ", "" if value is None else str(value)).strip()
 
 
-def _append(blocks: list[TextBlock], locator: str, value: object, method: str, settings: Settings) -> None:
+def _append(
+    blocks: list[TextBlock],
+    locator: str,
+    value: object,
+    method: str,
+    settings: Settings,
+) -> None:
     text = _text(value)
     if not text:
         return
@@ -69,14 +75,22 @@ def _office_zip(path: Path, extension: str, settings: Settings) -> zipfile.ZipFi
     if not zipfile.is_zipfile(path):
         with path.open("rb") as source:
             if source.read(8) == b"\xd0\xcf\x11\xe0\xa1\xb1\x1a\xe1":
-                raise DocumentError("PROTECTED", "Encrypted or unsupported Office container")
+                raise DocumentError(
+                    "PROTECTED", "Encrypted or unsupported Office container"
+                )
         raise DocumentError("UNSUPPORTED_CONTENT", "Office document is not OOXML")
     archive = zipfile.ZipFile(path)
-    expected = {".docx": "word/document.xml", ".pptx": "ppt/presentation.xml", ".xlsx": "xl/workbook.xml"}[extension]
+    expected = {
+        ".docx": "word/document.xml",
+        ".pptx": "ppt/presentation.xml",
+        ".xlsx": "xl/workbook.xml",
+    }[extension]
     names = set(archive.namelist())
     if expected not in names:
         archive.close()
-        raise DocumentError("UNSUPPORTED_CONTENT", "File content does not match extension")
+        raise DocumentError(
+            "UNSUPPORTED_CONTENT", "File content does not match extension"
+        )
     total = sum(entry.file_size for entry in archive.infolist())
     if total > settings.max_uncompressed_bytes:
         archive.close()
@@ -100,24 +114,38 @@ def _has_element(archive: zipfile.ZipFile, name: str, element: str) -> bool:
 
 
 def _check_protection(archive: zipfile.ZipFile, extension: str) -> None:
-    if extension == ".docx" and _has_element(archive, "word/settings.xml", "documentProtection"):
+    if extension == ".docx" and _has_element(
+        archive, "word/settings.xml", "documentProtection"
+    ):
         raise DocumentError("PROTECTED", "Word editing protection is enabled")
     if extension == ".xlsx":
         if _has_element(archive, "xl/workbook.xml", "workbookProtection"):
             raise DocumentError("PROTECTED", "Workbook protection is enabled")
         for name in archive.namelist():
-            if re.fullmatch(r"xl/worksheets/sheet\d+\.xml", name) and _has_element(archive, name, "sheetProtection"):
+            if re.fullmatch(r"xl/worksheets/sheet\d+\.xml", name) and _has_element(
+                archive, name, "sheetProtection"
+            ):
                 raise DocumentError("PROTECTED", f"Sheet protection is enabled: {name}")
-    if extension == ".pptx" and _has_element(archive, "ppt/presentation.xml", "modifyVerifier"):
+    if extension == ".pptx" and _has_element(
+        archive, "ppt/presentation.xml", "modifyVerifier"
+    ):
         raise DocumentError("PROTECTED", "PowerPoint editing protection is enabled")
 
 
-def _embedded_images(archive: zipfile.ZipFile, extension: str, settings: Settings, blocks: list[TextBlock],
-                     warnings: list[str], checkpoint: OcrCheckpoint | None,
-                     check_deadline: Callable[[], None] | None) -> None:
+def _embedded_images(
+    archive: zipfile.ZipFile,
+    extension: str,
+    settings: Settings,
+    blocks: list[TextBlock],
+    warnings: list[str],
+    checkpoint: OcrCheckpoint | None,
+    check_deadline: Callable[[], None] | None,
+) -> None:
     if not settings.ocr_enabled:
         return
-    prefix = {".docx": "word/media/", ".pptx": "ppt/media/", ".xlsx": "xl/media/"}[extension]
+    prefix = {".docx": "word/media/", ".pptx": "ppt/media/", ".xlsx": "xl/media/"}[
+        extension
+    ]
     for item in archive.infolist():
         if check_deadline:
             check_deadline()
@@ -130,7 +158,9 @@ def _embedded_images(archive: zipfile.ZipFile, extension: str, settings: Setting
         recognized = checkpoint.get(locator) if checkpoint else None
         try:
             if recognized is None:
-                recognized = recognize_image(archive.read(item), settings, check_deadline=check_deadline)
+                recognized = recognize_image(
+                    archive.read(item), settings, check_deadline=check_deadline
+                )
                 if checkpoint:
                     checkpoint.save(locator, recognized)
         except (OcrError, OSError, ValueError) as exc:
@@ -143,49 +173,85 @@ def _extract_docx(path: Path, settings: Settings, blocks: list[TextBlock]) -> No
     from docx import Document
     from docx.table import Table
 
-    document = Document(path)
+    document = Document(str(path.absolute()))
     for index, item in enumerate(document.iter_inner_content(), 1):
         if isinstance(item, Table):
             for row_index, row in enumerate(item.rows, 1):
                 values = [cell.text.strip() for cell in row.cells]
-                _append(blocks, f"table:{index}/row:{row_index}", " | ".join(values), "native", settings)
+                _append(
+                    blocks,
+                    f"table:{index}/row:{row_index}",
+                    " | ".join(values),
+                    "native",
+                    settings,
+                )
         else:
             _append(blocks, f"paragraph:{index}", item.text, "native", settings)
     for section_index, section in enumerate(document.sections, 1):
         for kind in ("header", "footer"):
             story = getattr(section, kind)
             for paragraph_index, paragraph in enumerate(story.paragraphs, 1):
-                _append(blocks, f"section:{section_index}/{kind}:{paragraph_index}", paragraph.text, "native", settings)
+                _append(
+                    blocks,
+                    f"section:{section_index}/{kind}:{paragraph_index}",
+                    paragraph.text,
+                    "native",
+                    settings,
+                )
 
 
-def _walk_shapes(shapes, slide_number: int, settings: Settings, blocks: list[TextBlock], prefix: str = "") -> None:
+def _walk_shapes(
+    shapes,
+    slide_number: int,
+    settings: Settings,
+    blocks: list[TextBlock],
+    prefix: str = "",
+) -> None:
     for index, shape in enumerate(shapes, 1):
         locator = f"slide:{slide_number}/shape:{prefix}{index}"
         if hasattr(shape, "text"):
             _append(blocks, locator, shape.text, "native", settings)
         if getattr(shape, "has_table", False):
             for row_index, row in enumerate(shape.table.rows, 1):
-                _append(blocks, f"{locator}/row:{row_index}", " | ".join(cell.text for cell in row.cells), "native", settings)
+                _append(
+                    blocks,
+                    f"{locator}/row:{row_index}",
+                    " | ".join(cell.text for cell in row.cells),
+                    "native",
+                    settings,
+                )
         if hasattr(shape, "shapes"):
-            _walk_shapes(shape.shapes, slide_number, settings, blocks, prefix=f"{prefix}{index}.")
+            _walk_shapes(
+                shape.shapes, slide_number, settings, blocks, prefix=f"{prefix}{index}."
+            )
 
 
-def _extract_pptx(path: Path, settings: Settings, blocks: list[TextBlock], warnings: list[str]) -> None:
+def _extract_pptx(
+    path: Path, settings: Settings, blocks: list[TextBlock], warnings: list[str]
+) -> None:
     from pptx import Presentation
 
-    presentation = Presentation(path)
+    presentation = Presentation(str(path.absolute()))
     for number, slide in enumerate(presentation.slides, 1):
         if number > settings.max_pages:
             raise DocumentError("LIMIT_EXCEEDED", "Slide count exceeds limit")
         _walk_shapes(slide.shapes, number, settings, blocks)
         if settings.include_notes and slide.has_notes_slide:
             try:
-                _append(blocks, f"slide:{number}/notes", slide.notes_slide.notes_text_frame.text, "native", settings)
+                _append(
+                    blocks,
+                    f"slide:{number}/notes",
+                    slide.notes_slide.notes_text_frame.text,  # pyright: ignore[reportOptionalMemberAccess]
+                    "native",
+                    settings,
+                )
             except AttributeError:
                 warnings.append(f"NOTES_UNAVAILABLE:slide:{number}")
 
 
-def _extract_xlsx(path: Path, settings: Settings, blocks: list[TextBlock], warnings: list[str]) -> None:
+def _extract_xlsx(
+    path: Path, settings: Settings, blocks: list[TextBlock], warnings: list[str]
+) -> None:
     from openpyxl import load_workbook
     from openpyxl.utils import get_column_letter
 
@@ -202,17 +268,33 @@ def _extract_xlsx(path: Path, settings: Settings, blocks: list[TextBlock], warni
                         continue
                     count += 1
                     if count > settings.max_cells:
-                        raise DocumentError("LIMIT_EXCEEDED", "Nonempty cell count exceeds limit")
-                    pairs.append(f"{get_column_letter(column_index)}{row_index}:{cell.value}")
+                        raise DocumentError(
+                            "LIMIT_EXCEEDED", "Nonempty cell count exceeds limit"
+                        )
+                    pairs.append(
+                        f"{get_column_letter(column_index)}{row_index}:{cell.value}"
+                    )
                 if pairs:
-                    _append(blocks, f"sheet:{sheet.title}/row:{row_index}", " | ".join(pairs), "native", settings)
+                    _append(
+                        blocks,
+                        f"sheet:{sheet.title}/row:{row_index}",
+                        " | ".join(pairs),
+                        "native",
+                        settings,
+                    )
         warnings.append("FORMULA_CACHE_ONLY:formula results are not recalculated")
     finally:
         workbook.close()
 
 
-def _extract_pdf(path: Path, settings: Settings, blocks: list[TextBlock], warnings: list[str],
-                 checkpoint: OcrCheckpoint | None, check_deadline: Callable[[], None] | None) -> None:
+def _extract_pdf(
+    path: Path,
+    settings: Settings,
+    blocks: list[TextBlock],
+    warnings: list[str],
+    checkpoint: OcrCheckpoint | None,
+    check_deadline: Callable[[], None] | None,
+) -> None:
     from pypdf import PdfReader
 
     reader = PdfReader(path, strict=False)
@@ -231,7 +313,7 @@ def _extract_pdf(path: Path, settings: Settings, blocks: list[TextBlock], warnin
                 check_deadline()
             try:
                 native = page.extract_text() or ""
-            except Exception as exc:
+            except Exception as exc:  # noqa: BLE001
                 native = ""
                 warnings.append(f"TEXT_LAYER_FAILED:page:{number}:{type(exc).__name__}")
             _append(blocks, f"page:{number}", native, "native", settings)
@@ -244,24 +326,44 @@ def _extract_pdf(path: Path, settings: Settings, blocks: list[TextBlock], warnin
                     pdfium_page = pdfium_document[number - 1]
                     try:
                         scale = settings.dpi / 72
-                        if pdfium_page.get_width() * pdfium_page.get_height() * scale * scale > settings.max_page_pixels:
-                            warnings.append(f"LIMIT_EXCEEDED:page:{number}:OCR pixel limit")
+                        if (
+                            pdfium_page.get_width()
+                            * pdfium_page.get_height()
+                            * scale
+                            * scale
+                            > settings.max_page_pixels
+                        ):
+                            warnings.append(
+                                f"LIMIT_EXCEEDED:page:{number}:OCR pixel limit"
+                            )
                             continue
-                        rendered = pdfium_page.render(scale=scale)
+                        rendered = pdfium_page.render(scale=scale)  # pyright: ignore[reportArgumentType]
                         try:
-                            recognized = recognize_image(rendered.to_pil(), settings, check_deadline=check_deadline)
+                            recognized = recognize_image(
+                                rendered.to_pil(),
+                                settings,
+                                check_deadline=check_deadline,
+                            )
                         finally:
                             rendered.close()
                     finally:
                         pdfium_page.close()
                     if checkpoint:
                         checkpoint.save(locator, recognized)
-                native_lines = {re.sub(r"\s+", "", line) for line in native.splitlines() if line.strip()}
-                fresh = [line for line in recognized.splitlines() if line.strip() and re.sub(r"\s+", "", line) not in native_lines]
+                native_lines = {
+                    re.sub(r"\s+", "", line)
+                    for line in native.splitlines()
+                    if line.strip()
+                }
+                fresh = [
+                    line
+                    for line in recognized.splitlines()
+                    if line.strip() and re.sub(r"\s+", "", line) not in native_lines
+                ]
                 _append(blocks, locator, "\n".join(fresh), "ocr", settings)
-            except (DocumentError, ProcessingDeferred, sqlite3.Error):
+            except DocumentError, ProcessingDeferred, sqlite3.Error:
                 raise
-            except Exception as exc:
+            except Exception as exc:  # noqa: BLE001
                 warnings.append(f"OCR_FAILED:page:{number}:{exc}")
     finally:
         if pdfium_document is not None:
@@ -278,13 +380,20 @@ def _extract_text(path: Path, settings: Settings, blocks: list[TextBlock]) -> No
         try:
             text = data.decode("cp932")
         except UnicodeDecodeError as fallback_exc:
-            raise DocumentError("DECODE_ERROR", "Text cannot be decoded as CP932") from fallback_exc
+            raise DocumentError(
+                "DECODE_ERROR", "Text cannot be decoded as CP932"
+            ) from fallback_exc
     for number, line in enumerate(text.splitlines(), 1):
         _append(blocks, f"line:{number}", line, "native", settings)
 
 
-def extract_document(path: Path, settings: Settings, *, checkpoint: OcrCheckpoint | None = None,
-                     check_deadline: Callable[[], None] | None = None) -> Extraction:
+def extract_document(
+    path: Path,
+    settings: Settings,
+    *,
+    checkpoint: OcrCheckpoint | None = None,
+    check_deadline: Callable[[], None] | None = None,
+) -> Extraction:
     extension = path.suffix.lower()
     blocks: list[TextBlock] = TextBlocks(settings.max_chars)
     warnings: list[str] = []
@@ -298,17 +407,27 @@ def extract_document(path: Path, settings: Settings, *, checkpoint: OcrCheckpoin
                     _extract_pptx(path, settings, blocks, warnings)
                 else:
                     _extract_xlsx(path, settings, blocks, warnings)
-                _embedded_images(archive, extension, settings, blocks, warnings, checkpoint, check_deadline)
-        except (ProcessingDeferred, sqlite3.Error):
+                _embedded_images(
+                    archive,
+                    extension,
+                    settings,
+                    blocks,
+                    warnings,
+                    checkpoint,
+                    check_deadline,
+                )
+        except ProcessingDeferred, sqlite3.Error:
             raise
         except DocumentError:
             raise
         except Exception as exc:
-            raise DocumentError("CORRUPT", f"Cannot read Office document: {exc}") from exc
+            raise DocumentError(
+                "CORRUPT", f"Cannot read Office document: {exc}"
+            ) from exc
     elif extension == ".pdf":
         try:
             _extract_pdf(path, settings, blocks, warnings, checkpoint, check_deadline)
-        except (ProcessingDeferred, sqlite3.Error):
+        except ProcessingDeferred, sqlite3.Error:
             raise
         except DocumentError:
             raise
@@ -317,7 +436,9 @@ def extract_document(path: Path, settings: Settings, *, checkpoint: OcrCheckpoin
     elif extension in {".txt", ".md"}:
         _extract_text(path, settings, blocks)
     else:
-        raise DocumentError("UNSUPPORTED_CONTENT", f"Unsupported extension: {extension}")
+        raise DocumentError(
+            "UNSUPPORTED_CONTENT", f"Unsupported extension: {extension}"
+        )
     if not blocks:
         warnings.append("NO_TEXT")
     return Extraction(blocks, list(dict.fromkeys(warnings)))

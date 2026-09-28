@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import io
 import subprocess
-from typing import Callable
+from collections.abc import Callable
 
 from PIL import Image, UnidentifiedImageError
 
@@ -15,8 +15,12 @@ class OcrError(RuntimeError):
     pass
 
 
-def recognize_image(data: bytes | Image.Image, settings: Settings, *,
-                    check_deadline: Callable[[], None] | None = None) -> str:
+def recognize_image(
+    data: bytes | Image.Image,
+    settings: Settings,
+    *,
+    check_deadline: Callable[[], None] | None = None,
+) -> str:
     if not settings.ocr_enabled:
         return ""
     try:
@@ -34,15 +38,19 @@ def recognize_image(data: bytes | Image.Image, settings: Settings, *,
         if check_deadline:
             check_deadline()
         args = [
-            str(settings.tesseract), "stdin", "stdout", "--tessdata-dir",
-            str(settings.tessdata_dir), "-l", languages,
+            str(settings.tesseract),
+            "stdin",
+            "stdout",
+            "--tessdata-dir",
+            str(settings.tessdata_dir),
+            "-l",
+            languages,
         ]
         try:
             result = subprocess.run(
                 args,
                 input=payload,
-                stdout=subprocess.PIPE,
-                stderr=subprocess.PIPE,
+                capture_output=True,
                 timeout=settings.ocr_timeout,
                 check=False,
                 creationflags=getattr(subprocess, "CREATE_NO_WINDOW", 0),
@@ -57,7 +65,10 @@ def recognize_image(data: bytes | Image.Image, settings: Settings, *,
         return result.stdout.decode("utf-8", errors="replace").strip()
 
     primary = recognize("+".join(settings.ocr_languages))
-    if image.height > image.width * 1.4 and len(primary.replace(" ", "").replace("\n", "")) < 10:
+    if (
+        image.height > image.width * 1.4
+        and len(primary.replace(" ", "").replace("\n", "")) < 10
+    ):
         vertical = recognize(settings.vertical_language)
         if len(vertical) > len(primary):
             return vertical

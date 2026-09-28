@@ -42,7 +42,9 @@ def _single_instance(database: Path):
 
 
 def _parser() -> argparse.ArgumentParser:
-    parser = argparse.ArgumentParser(prog="meta-scanner", description="Local document catalog extraction")
+    parser = argparse.ArgumentParser(
+        prog="meta-scanner", description="Local document catalog extraction"
+    )
     commands = parser.add_subparsers(dest="command", required=True)
     for name in ("doctor", "scan", "run", "status"):
         command = commands.add_parser(name)
@@ -51,8 +53,11 @@ def _parser() -> argparse.ArgumentParser:
             command.add_argument("--dry-run", action="store_true", required=True)
         if name == "run":
             command.add_argument("--ignore-window", action="store_true")
-            command.add_argument("--extract-only", action="store_true",
-                                 help="write an extractive preview without starting the local AI")
+            command.add_argument(
+                "--extract-only",
+                action="store_true",
+                help="write an extractive preview without starting the local AI",
+            )
     return parser
 
 
@@ -70,13 +75,29 @@ def main() -> None:
             report = {
                 "python": sys.version.split()[0],
                 "roots": [str(root) for root in settings.roots],
-                "tesseract": settings.tesseract.is_file() if settings.ocr_enabled else "disabled",
-                "tessdata": {lang: (settings.tessdata_dir / f"{lang}.traineddata").is_file()
-                             for lang in (*settings.ocr_languages, settings.vertical_language)} if settings.ocr_enabled else {},
-                "local_llm": "disabled" if not settings.llm_enabled else "ready" if model_error is None else model_error,
+                "tesseract": settings.tesseract.is_file()
+                if settings.ocr_enabled
+                else "disabled",
+                "tessdata": {
+                    lang: (settings.tessdata_dir / f"{lang}.traineddata").is_file()
+                    for lang in (*settings.ocr_languages, settings.vertical_language)
+                }
+                if settings.ocr_enabled
+                else {},
+                "local_llm": "disabled"
+                if not settings.llm_enabled
+                else "ready"
+                if model_error is None
+                else model_error,
                 "legacy_office": "not implemented",
             }
-            code = 0 if report["tesseract"] is not False and all(report["tessdata"].values()) and model_error is None else 20
+            code = (
+                0
+                if report["tesseract"] is not False
+                and all(report["tessdata"].values())
+                and model_error is None
+                else 20
+            )
         elif arguments.command == "scan":
             code, report = run_scan(settings, ignore_window=True, dry_run=True)
         elif arguments.command == "status":
@@ -91,8 +112,11 @@ def main() -> None:
             code = 0
         else:
             with _single_instance(settings.database):
-                code, report = run_scan(settings, ignore_window=arguments.ignore_window,
-                                        extract_only=arguments.extract_only)
+                code, report = run_scan(
+                    settings,
+                    ignore_window=arguments.ignore_window,
+                    extract_only=arguments.extract_only,
+                )
     except ConfigurationError as exc:
         code, report = 20, {"error": str(exc)}
     except AlreadyRunning as exc:

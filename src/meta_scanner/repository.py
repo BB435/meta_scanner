@@ -4,12 +4,12 @@ from __future__ import annotations
 
 import json
 import sqlite3
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 from pathlib import Path
 
 
 def utc_now() -> str:
-    return datetime.now(timezone.utc).isoformat()
+    return datetime.now(UTC).isoformat()
 
 
 class Repository:
@@ -56,7 +56,9 @@ class Repository:
             );
             """
         )
-        columns = {row["name"] for row in self.db.execute("PRAGMA table_info(contents)")}
+        columns = {
+            row["name"] for row in self.db.execute("PRAGMA table_info(contents)")
+        }
         if "metadata_version" not in columns:
             self.db.execute("ALTER TABLE contents ADD COLUMN metadata_version TEXT")
         if "extraction_warnings" not in columns:
@@ -68,25 +70,45 @@ class Repository:
         self.db.close()
 
     def start_run(self) -> int:
-        cursor = self.db.execute("INSERT INTO runs(started_at,status) VALUES (?, 'running')", (utc_now(),))
+        cursor = self.db.execute(
+            "INSERT INTO runs(started_at,status) VALUES (?, 'running')", (utc_now(),)
+        )
         self.db.commit()
-        return cursor.lastrowid
+        return cursor.lastrowid  # pyright: ignore[reportReturnType]
 
     def finish_run(self, run_id: int, status: str, counts: dict[str, int]) -> None:
         self.db.execute(
             "UPDATE runs SET finished_at=?, status=?, scanned=?, extracted=?, reused=?, errors=? WHERE id=?",
-            (utc_now(), status, counts["scanned"], counts["extracted"], counts["reused"], counts["errors"], run_id),
+            (
+                utc_now(),
+                status,
+                counts["scanned"],
+                counts["extracted"],
+                counts["reused"],
+                counts["errors"],
+                run_id,
+            ),
         )
         self.db.commit()
 
     def content(self, digest: str, version: str) -> sqlite3.Row | None:
         return self.db.execute(
-            "SELECT * FROM contents WHERE sha256=? AND extraction_version=?", (digest, version)
+            "SELECT * FROM contents WHERE sha256=? AND extraction_version=?",
+            (digest, version),
         ).fetchone()
 
-    def save_content(self, digest: str, version: str, status: str, record: dict | None = None,
-                     blocks_path: Path | None = None, error_code: str | None = None, detail: str | None = None,
-                     metadata_version: str | None = None, extraction_warnings: list[str] | None = None) -> None:
+    def save_content(
+        self,
+        digest: str,
+        version: str,
+        status: str,
+        record: dict | None = None,
+        blocks_path: Path | None = None,
+        error_code: str | None = None,
+        detail: str | None = None,
+        metadata_version: str | None = None,
+        extraction_warnings: list[str] | None = None,
+    ) -> None:
         self.db.execute(
             """INSERT INTO contents(sha256,extraction_version,metadata_version,status,record_json,blocks_path,
                                     extraction_warnings,error_code,error_detail,updated_at)
@@ -97,22 +119,48 @@ class Repository:
                extraction_warnings=excluded.extraction_warnings,
                error_code=excluded.error_code,error_detail=excluded.error_detail,
                updated_at=excluded.updated_at""",
-            (digest, version, metadata_version, status, json.dumps(record, ensure_ascii=False) if record else None,
-             str(blocks_path) if blocks_path else None,
-             json.dumps(extraction_warnings, ensure_ascii=False) if extraction_warnings is not None else None,
-             error_code, detail, utc_now()),
+            (
+                digest,
+                version,
+                metadata_version,
+                status,
+                json.dumps(record, ensure_ascii=False) if record else None,
+                str(blocks_path) if blocks_path else None,
+                json.dumps(extraction_warnings, ensure_ascii=False)
+                if extraction_warnings is not None
+                else None,
+                error_code,
+                detail,
+                utc_now(),
+            ),
         )
         self.db.commit()
 
-    def mark_path(self, run_id: int, root: Path, path: Path, digest: str | None, size: int,
-                  error_code: str | None = None) -> None:
+    def mark_path(
+        self,
+        run_id: int,
+        root: Path,
+        path: Path,
+        digest: str | None,
+        size: int,
+        error_code: str | None = None,
+    ) -> None:
         self.db.execute(
             """INSERT INTO paths(path_key,display_path,root,sha256,size_bytes,last_seen_run,last_verified_at,error_code)
                VALUES(?,?,?,?,?,?,?,?) ON CONFLICT(path_key) DO UPDATE SET
                display_path=excluded.display_path,root=excluded.root,sha256=excluded.sha256,
                size_bytes=excluded.size_bytes,last_seen_run=excluded.last_seen_run,
                last_verified_at=excluded.last_verified_at,error_code=excluded.error_code""",
-            (str(path).casefold(), str(path), str(root).casefold(), digest, size, run_id, utc_now(), error_code),
+            (
+                str(path).casefold(),
+                str(path),
+                str(root).casefold(),
+                digest,
+                size,
+                run_id,
+                utc_now(),
+                error_code,
+            ),
         )
         self.db.commit()
 
@@ -124,7 +172,10 @@ class Repository:
         self.db.commit()
 
     def prune_root(self, root: Path, run_id: int) -> None:
-        self.db.execute("DELETE FROM paths WHERE root=? AND last_seen_run<>?", (str(root).casefold(), run_id))
+        self.db.execute(
+            "DELETE FROM paths WHERE root=? AND last_seen_run<>?",
+            (str(root).casefold(), run_id),
+        )
         self.db.commit()
 
     def catalog_rows(self):
@@ -157,7 +208,9 @@ class Repository:
         ).fetchone()
         return row[0] if row is not None else None
 
-    def save_ocr_text(self, digest: str, version: str, locator: str, value: str) -> None:
+    def save_ocr_text(
+        self, digest: str, version: str, locator: str, value: str
+    ) -> None:
         self.db.execute(
             """INSERT OR REPLACE INTO ocr_units(sha256,extraction_version,locator,text,updated_at)
                VALUES(?,?,?,?,?)""",
@@ -171,7 +224,8 @@ class Repository:
 
     def errors_for_run(self, run_id: int):
         return self.db.execute(
-            "SELECT path,code,detail,occurred_at FROM errors WHERE run_id=? ORDER BY id", (run_id,)
+            "SELECT path,code,detail,occurred_at FROM errors WHERE run_id=? ORDER BY id",
+            (run_id,),
         )
 
 

@@ -138,21 +138,35 @@ def load_settings(config_file: Path) -> Settings:
     if main != REQUIRED_EXTENSIONS:
         raise ConfigurationError("All four required extensions must remain enabled")
     if extra & LEGACY_EXTENSIONS or legacy.get("enabled", False):
-        raise ConfigurationError("Legacy Office formats require LibreOffice and are not implemented")
+        raise ConfigurationError(
+            "Legacy Office formats require LibreOffice and are not implemented"
+        )
     if extra - SUPPORTED_OPTIONAL:
-        raise ConfigurationError(f"Unsupported optional extensions: {sorted(extra - SUPPORTED_OPTIONAL)}")
+        raise ConfigurationError(
+            f"Unsupported optional extensions: {sorted(extra - SUPPORTED_OPTIONAL)}"
+        )
     if scan.get("hash_mode", "strict") != "strict" or scan.get("follow_links", False):
-        raise ConfigurationError("Only strict hashing without symlink traversal is supported")
+        raise ConfigurationError(
+            "Only strict hashing without symlink traversal is supported"
+        )
     if runtime.get("workers", 1) != 1:
         raise ConfigurationError("Only one worker is supported")
     if extraction.get("protection_policy", "skip_any_detected") != "skip_any_detected":
-        raise ConfigurationError("Only skip_any_detected protection policy is supported")
+        raise ConfigurationError(
+            "Only skip_any_detected protection policy is supported"
+        )
 
     exclude = scan.get("exclude_globs", [])
-    if not isinstance(exclude, list) or any(not isinstance(item, str) for item in exclude):
+    if not isinstance(exclude, list) or any(
+        not isinstance(item, str) for item in exclude
+    ):
         raise ConfigurationError("scan.exclude_globs must be a list of patterns")
     languages = ocr.get("languages", ["jpn", "eng"])
-    if not isinstance(languages, list) or not languages or any(not isinstance(lang, str) or not lang for lang in languages):
+    if (
+        not isinstance(languages, list)
+        or not languages
+        or any(not isinstance(lang, str) or not lang for lang in languages)
+    ):
         raise ConfigurationError("ocr.languages must be a nonempty list")
     start = _clock(runtime.get("window_start", "22:00"), "runtime.window_start")
     end = _clock(runtime.get("window_end", "06:00"), "runtime.window_end")
@@ -167,7 +181,14 @@ def load_settings(config_file: Path) -> Settings:
     if not isinstance(endpoint_value, str):
         raise ConfigurationError("llm.endpoint must be a URL")
     endpoint = urlsplit(endpoint_value)
-    if endpoint.scheme != "http" or endpoint.hostname != "127.0.0.1" or endpoint.path not in ("", "/") or endpoint.query or endpoint.fragment or endpoint.username:
+    if (
+        endpoint.scheme != "http"
+        or endpoint.hostname != "127.0.0.1"
+        or endpoint.path not in ("", "/")
+        or endpoint.query
+        or endpoint.fragment
+        or endpoint.username
+    ):
         raise ConfigurationError("llm.endpoint must be http://127.0.0.1:<port>")
     try:
         llm_port = endpoint.port or 80
@@ -178,13 +199,24 @@ def load_settings(config_file: Path) -> Settings:
     llm_context = _positive(llm.get("context_tokens", 4096), "llm.context_tokens")
     llm_chunk_tokens = _positive(llm.get("chunk_tokens", 1800), "llm.chunk_tokens")
     llm_overlap_tokens = llm.get("overlap_tokens", 150)
-    llm_max_output_tokens = _positive(llm.get("max_output_tokens", 768), "llm.max_output_tokens")
-    if not isinstance(llm_overlap_tokens, int) or not 0 <= llm_overlap_tokens < llm_chunk_tokens:
-        raise ConfigurationError("llm.overlap_tokens must be between 0 and chunk_tokens")
+    llm_max_output_tokens = _positive(
+        llm.get("max_output_tokens", 768), "llm.max_output_tokens"
+    )
+    if (
+        not isinstance(llm_overlap_tokens, int)
+        or not 0 <= llm_overlap_tokens < llm_chunk_tokens
+    ):
+        raise ConfigurationError(
+            "llm.overlap_tokens must be between 0 and chunk_tokens"
+        )
     if llm_chunk_tokens + llm_max_output_tokens + 512 > llm_context:
-        raise ConfigurationError("LLM context is too small for the chunk and output budget")
+        raise ConfigurationError(
+            "LLM context is too small for the chunk and output budget"
+        )
     if llm.get("gpu_layers", 0) != 0 or llm.get("thinking", False):
-        raise ConfigurationError("This CPU build requires gpu_layers=0 and thinking=false")
+        raise ConfigurationError(
+            "This CPU build requires gpu_layers=0 and thinking=false"
+        )
     model_sha256 = llm.get("model_sha256", "")
     if not isinstance(model_sha256, str):
         raise ConfigurationError("llm.model_sha256 must be text")
@@ -193,7 +225,11 @@ def load_settings(config_file: Path) -> Settings:
 
     def sampling(name: str, default: float, minimum: float, maximum: float) -> float:
         value = llm.get(name, default)
-        if isinstance(value, bool) or not isinstance(value, (int, float)) or not minimum <= value <= maximum:
+        if (
+            isinstance(value, bool)
+            or not isinstance(value, (int, float))
+            or not minimum <= value <= maximum
+        ):
             raise ConfigurationError(f"llm.{name} is out of range")
         return float(value)
 
@@ -202,45 +238,88 @@ def load_settings(config_file: Path) -> Settings:
         roots=roots,
         extensions=main | extra,
         exclude_globs=tuple(exclude),
-        stable_age_seconds=_positive(scan.get("stable_age_seconds", 60), "scan.stable_age_seconds"),
-        database=_path(source.parent, storage.get("database", "var/catalog.sqlite3"), "storage.database"),
-        cache_dir=_path(source.parent, storage.get("cache_dir", "var/cache"), "storage.cache_dir"),
-        export_dir=_path(source.parent, storage.get("export_dir", "var/export"), "storage.export_dir"),
+        stable_age_seconds=_positive(
+            scan.get("stable_age_seconds", 60), "scan.stable_age_seconds"
+        ),
+        database=_path(
+            source.parent,
+            storage.get("database", "var/catalog.sqlite3"),
+            "storage.database",
+        ),
+        cache_dir=_path(
+            source.parent, storage.get("cache_dir", "var/cache"), "storage.cache_dir"
+        ),
+        export_dir=_path(
+            source.parent, storage.get("export_dir", "var/export"), "storage.export_dir"
+        ),
         start=start,
         end=end,
-        max_file_bytes=_positive(extraction.get("max_file_mib", 512), "extraction.max_file_mib") * 1024**2,
-        max_uncompressed_bytes=_positive(extraction.get("max_uncompressed_mib", 2048), "extraction.max_uncompressed_mib") * 1024**2,
-        max_pages=_positive(extraction.get("max_pages_per_document", 5000), "extraction.max_pages_per_document"),
-        max_cells=_positive(extraction.get("max_nonempty_cells", 2000000), "extraction.max_nonempty_cells"),
-        max_chars=_positive(extraction.get("max_text_characters", 20000000), "extraction.max_text_characters"),
+        max_file_bytes=_positive(
+            extraction.get("max_file_mib", 512), "extraction.max_file_mib"
+        )
+        * 1024**2,
+        max_uncompressed_bytes=_positive(
+            extraction.get("max_uncompressed_mib", 2048),
+            "extraction.max_uncompressed_mib",
+        )
+        * 1024**2,
+        max_pages=_positive(
+            extraction.get("max_pages_per_document", 5000),
+            "extraction.max_pages_per_document",
+        ),
+        max_cells=_positive(
+            extraction.get("max_nonempty_cells", 2000000),
+            "extraction.max_nonempty_cells",
+        ),
+        max_chars=_positive(
+            extraction.get("max_text_characters", 20000000),
+            "extraction.max_text_characters",
+        ),
         allow_cp932=extraction.get("allow_cp932", False),
         include_notes=extraction.get("include_notes", True),
         include_hidden_sheets=extraction.get("include_hidden_sheets", True),
         ocr_enabled=ocr.get("enabled", True),
-        tesseract=_path(source.parent, ocr.get("executable", "tesseract.exe"), "ocr.executable"),
-        tessdata_dir=_path(source.parent, ocr.get("tessdata_dir", "tessdata"), "ocr.tessdata_dir"),
+        tesseract=_path(
+            source.parent, ocr.get("executable", "tesseract.exe"), "ocr.executable"
+        ),
+        tessdata_dir=_path(
+            source.parent, ocr.get("tessdata_dir", "tessdata"), "ocr.tessdata_dir"
+        ),
         ocr_languages=tuple(languages),
         vertical_language=ocr.get("vertical_language", "jpn_vert"),
         dpi=_positive(ocr.get("dpi", 300), "ocr.dpi"),
-        max_page_pixels=_positive(ocr.get("max_page_megapixels", 25), "ocr.max_page_megapixels") * 1000000,
-        ocr_timeout=_positive(ocr.get("page_timeout_seconds", 180), "ocr.page_timeout_seconds"),
+        max_page_pixels=_positive(
+            ocr.get("max_page_megapixels", 25), "ocr.max_page_megapixels"
+        )
+        * 1000000,
+        ocr_timeout=_positive(
+            ocr.get("page_timeout_seconds", 180), "ocr.page_timeout_seconds"
+        ),
         llm_enabled=llm_enabled,
-        llm_executable=_path(source.parent, llm.get("executable", "llama-server.exe"), "llm.executable"),
-        model_path=_path(source.parent, llm.get("model_path", "models/model.gguf"), "llm.model_path"),
+        llm_executable=_path(
+            source.parent, llm.get("executable", "llama-server.exe"), "llm.executable"
+        ),
+        model_path=_path(
+            source.parent, llm.get("model_path", "models/model.gguf"), "llm.model_path"
+        ),
         model_sha256=model_sha256.lower(),
         llm_port=llm_port,
         llm_context=llm_context,
         llm_chunk_tokens=llm_chunk_tokens,
         llm_overlap_tokens=llm_overlap_tokens,
         llm_max_output_tokens=llm_max_output_tokens,
-        llm_timeout=_positive(llm.get("request_timeout_seconds", 600), "llm.request_timeout_seconds"),
+        llm_timeout=_positive(
+            llm.get("request_timeout_seconds", 600), "llm.request_timeout_seconds"
+        ),
         llm_cpu_threads=_positive(runtime.get("cpu_threads", 4), "runtime.cpu_threads"),
         llm_temperature=sampling("temperature", 0.7, 0.0, 2.0),
         llm_top_p=sampling("top_p", 0.8, 0.0, 1.0),
         llm_top_k=_positive(llm.get("top_k", 20), "llm.top_k"),
         llm_min_p=sampling("min_p", 0.0, 0.0, 1.0),
         llm_presence_penalty=sampling("presence_penalty", 1.5, -2.0, 2.0),
-        repair_attempts=_positive(metadata.get("repair_attempts", 1), "metadata.repair_attempts"),
+        repair_attempts=_positive(
+            metadata.get("repair_attempts", 1), "metadata.repair_attempts"
+        ),
         prompt_version=str(metadata.get("prompt_version", "ja-catalog-v1")),
     )
     for path in (settings.database.parent, settings.cache_dir, settings.export_dir):
