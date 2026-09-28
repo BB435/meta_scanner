@@ -27,7 +27,7 @@ from .local_llm import LlmDeferred, LlmError, LocalModel, verify_model
 from .metadata import preview_metadata
 from .repository import OcrCheckpoint, Repository, utc_now
 
-IMPLEMENTATION_VERSION = "native-extraction-v2"
+IMPLEMENTATION_VERSION = "native-extraction-v3"
 METADATA_VERSION = hashlib.sha256(b"extractive-preview-v1-sudachi-c").hexdigest()
 
 

@@ -113,17 +113,48 @@ def _has_element(archive: zipfile.ZipFile, name: str, element: str) -> bool:
     return False
 
 
+def _has_enabled_protection(
+    archive: zipfile.ZipFile,
+    name: str,
+    element: str,
+    enabled_attributes: tuple[str, ...],
+) -> bool:
+    try:
+        with archive.open(name) as source:
+            for _, node in ElementTree.iterparse(source, events=("start",)):
+                if node.tag.rsplit("}", 1)[-1] != element:
+                    continue
+                return any(
+                    node.attrib.get(attribute, "").casefold() in {"1", "true"}
+                    for attribute in enabled_attributes
+                )
+    except KeyError:
+        return False
+    except ElementTree.ParseError as exc:
+        raise DocumentError("CORRUPT", f"Invalid XML in {name}: {exc}") from exc
+    return False
+
+
 def _check_protection(archive: zipfile.ZipFile, extension: str) -> None:
     if extension == ".docx" and _has_element(
         archive, "word/settings.xml", "documentProtection"
     ):
         raise DocumentError("PROTECTED", "Word editing protection is enabled")
     if extension == ".xlsx":
-        if _has_element(archive, "xl/workbook.xml", "workbookProtection"):
+        if _has_enabled_protection(
+            archive,
+            "xl/workbook.xml",
+            "workbookProtection",
+            ("lockStructure", "lockWindows", "lockRevision"),
+        ):
             raise DocumentError("PROTECTED", "Workbook protection is enabled")
         for name in archive.namelist():
-            if re.fullmatch(r"xl/worksheets/sheet\d+\.xml", name) and _has_element(
-                archive, name, "sheetProtection"
+            protected_sheet = re.fullmatch(r"xl/worksheets/sheet\d+\.xml", name)
+            if protected_sheet and _has_enabled_protection(
+                archive,
+                name,
+                "sheetProtection",
+                ("sheet", "objects", "scenarios"),
             ):
                 raise DocumentError("PROTECTED", f"Sheet protection is enabled: {name}")
     if extension == ".pptx" and _has_element(
@@ -263,16 +294,38 @@ def _extract_xlsx(
     from openpyxl import load_workbook
     from openpyxl.utils import get_column_letter
 
-    workbook = load_workbook(path, read_only=True, data_only=True, keep_links=False)
+    formula_workbook = load_workbook(
+        path, read_only=True, data_only=False, keep_links=False
+    )
+    value_workbook = load_workbook(
+        path, read_only=True, data_only=True, keep_links=False
+    )
     try:
         count = 0
-        for sheet in workbook:
+        has_formulas = False
+        value_sheets = {sheet.title: sheet for sheet in value_workbook}
+        for sheet in formula_workbook:
             if sheet.sheet_state != "visible" and not settings.include_hidden_sheets:
                 continue
+            value_sheet = value_sheets[sheet.title]
+            value_rows = value_sheet.iter_rows()
             for row_index, row in enumerate(sheet.iter_rows(), 1):
+                cached_row = next(value_rows)
                 pairs = []
                 for column_index, cell in enumerate(row, 1):
-                    if cell.value is None or cell.value == "":
+                    cached_cell = cached_row[column_index - 1]
+                    if cell.data_type == "f":
+                        has_formulas = True
+                        if cached_cell.value is None:
+                            warnings.append(
+                                f"FORMULA_CACHE_MISSING:sheet:{sheet.title}/{cell.coordinate}"
+                            )
+                            value = f"{cell.value} (計算結果なし)"
+                        else:
+                            value = cached_cell.value
+                    else:
+                        value = cached_cell.value
+                    if value is None or value == "":
                         continue
                     count += 1
                     if count > settings.max_cells:
@@ -280,7 +333,7 @@ def _extract_xlsx(
                             "LIMIT_EXCEEDED", "Nonempty cell count exceeds limit"
                         )
                     pairs.append(
-                        f"{get_column_letter(column_index)}{row_index}:{cell.value}"
+                        f"{get_column_letter(column_index)}{row_index}:{value}"
                     )
                 if pairs:
                     _append(
@@ -290,9 +343,11 @@ def _extract_xlsx(
                         "native",
                         settings,
                     )
-        warnings.append("FORMULA_CACHE_ONLY:formula results are not recalculated")
+        if has_formulas:
+            warnings.append("FORMULA_CACHE_ONLY:formula results are not recalculated")
     finally:
-        workbook.close()
+        formula_workbook.close()
+        value_workbook.close()
 
 
 def _extract_pdf(
